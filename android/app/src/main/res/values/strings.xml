@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Koni</string>
+    <string name="title_activity_main">Koni</string>
+    <string name="package_name">com.koni.app</string>
+    <string name="custom_url_scheme">com.koni.app</string>
+</resources>
