@@ -6,6 +6,9 @@ import { useStudents } from "../lib/queries/students";
 import { usePayers } from "../lib/queries/payers";
 import { formatCurrency } from "../lib/format";
 import SelectField from "../components/SelectField";
+import { PencilIcon } from "../components/icons";
+import LogLessonForm from "../components/LogLessonForm";
+import type { Lesson } from "../lib/types";
 
 type Tab = "lessons" | "payments";
 
@@ -14,6 +17,7 @@ interface FeedEntry {
   kind: "lesson" | "payment";
   label: string;
   netEffect: number;
+  lessonId?: number;
 }
 
 export default function History() {
@@ -27,6 +31,7 @@ export default function History() {
   const [studentId, setStudentId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
 
   const isLoading = lessonsLoading || paymentsLoading;
 
@@ -45,13 +50,14 @@ export default function History() {
           kind: "lesson",
           label: `${student?.name ?? "?"} — ${lesson.lesson_type.name}`,
           netEffect: parseFloat(ls.amount_paid) - parseFloat(ls.price_charged),
+          lessonId: lesson.id,
         });
       }
     }
 
     for (const payment of payments ?? []) {
       if (payerId !== undefined && payment.payer_id !== payerId) continue;
-      if (studentId && payerId === undefined) continue; // student has no resolvable payer, skip
+      if (studentId && payerId === undefined) continue;
       const payer = payers?.find((p) => p.id === payment.payer_id);
       result.push({
         date: payment.date,
@@ -68,11 +74,6 @@ export default function History() {
     });
   }, [lessons, payments, students, payers, studentId, payerId, startDate, endDate, t]);
 
-  // With a single student selected, the feed represents one payer's ledger, so a
-  // running balance is meaningful. It's computed over BOTH lessons and payments
-  // together (so it reflects the true balance at that point in time) even though
-  // the two are then displayed in separate tabs — only the rows for the active
-  // tab are shown, each still carrying its correct running total.
   const showRunningBalance = !!studentId;
   const sorted = showRunningBalance
     ? [...entries].sort((a, b) => (a.date < b.date ? -1 : 1))
@@ -92,6 +93,11 @@ export default function History() {
     setStudentId("");
     setStartDate("");
     setEndDate("");
+  }
+
+  function openEdit(lessonId: number) {
+    const lesson = lessons?.find((l) => l.id === lessonId);
+    if (lesson) setEditingLesson(lesson);
   }
 
   return (
@@ -189,25 +195,62 @@ export default function History() {
         <ul className="divide-y divide-gray-100 dark:divide-gray-800">
           {displayRows.map((entry, i) => (
             <li key={i} className="flex items-center justify-between gap-3 py-2.5">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{entry.label}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{entry.date}</p>
               </div>
-              <div className="shrink-0 text-right">
-                <p className={`text-sm font-medium ${entry.netEffect > 0 ? "text-mint-500 dark:text-mint-400" : entry.netEffect < 0 ? "text-coral-500 dark:text-coral-400" : "text-gray-500 dark:text-gray-400"}`}>
-                  {entry.netEffect > 0 ? "+" : entry.netEffect < 0 ? "−" : ""}
-                  {formatCurrency(Math.abs(entry.netEffect))}
-                </p>
-                {showRunningBalance && (
-                  <p className="text-xs text-gray-400 dark:text-gray-500">
-                    {t("history.runningBalance")}: {formatCurrency(entry.running)}
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="text-right">
+                  <p className={`text-sm font-medium ${entry.netEffect > 0 ? "text-mint-500 dark:text-mint-400" : entry.netEffect < 0 ? "text-coral-500 dark:text-coral-400" : "text-gray-500 dark:text-gray-400"}`}>
+                    {entry.netEffect > 0 ? "+" : entry.netEffect < 0 ? "−" : ""}
+                    {formatCurrency(Math.abs(entry.netEffect))}
                   </p>
+                  {showRunningBalance && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      {t("history.runningBalance")}: {formatCurrency(entry.running)}
+                    </p>
+                  )}
+                </div>
+                {entry.kind === "lesson" && entry.lessonId !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => openEdit(entry.lessonId!)}
+                    aria-label={t("history.editLesson")}
+                    className="text-gray-400 hover:text-brand-500 dark:hover:text-brand-400"
+                  >
+                    <PencilIcon className="h-4 w-4" />
+                  </button>
                 )}
               </div>
             </li>
           ))}
         </ul>
       </div>
+
+      {/* Edit lesson modal */}
+      {editingLesson && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingLesson(null); }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold">{t("history.editLesson")}</h2>
+              <button
+                type="button"
+                onClick={() => setEditingLesson(null)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <LogLessonForm
+              initialLesson={editingLesson}
+              onSaved={() => setEditingLesson(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

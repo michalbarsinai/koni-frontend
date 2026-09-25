@@ -157,7 +157,12 @@
     "selectStudentHint": "Select a student to see their running balance.",
     "noLessonEntries": "No lessons in this period.",
     "noPaymentEntries": "No payments in this period.",
-    "clearFilters": "Clear filters"
+    "clearFilters": "Clear filters",
+    "editLesson": "Edit lesson",
+    "deleteLesson": "Delete lesson",
+    "deleteLessonConfirm": "Delete this lesson?",
+    "lessonDeleted": "Lesson deleted",
+    "lessonUpdated": "Lesson updated"
   },
   "earnings": {
     "noData": "No earnings recorded yet.",

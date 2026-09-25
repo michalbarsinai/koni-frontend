@@ -2,10 +2,11 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useLessonTypes } from "../lib/queries/lessonTypes";
 import { useStudents } from "../lib/queries/students";
-import { useCreateLesson, type LessonStudentInput } from "../lib/queries/lessons";
+import { useCreateLesson, useUpdateLesson, useDeleteLesson, type LessonStudentInput } from "../lib/queries/lessons";
 import { todayIsoDate, formatCurrency } from "../lib/format";
 import { PlusIcon } from "./icons";
 import SelectField from "./SelectField";
+import type { Lesson } from "../lib/types";
 
 interface StudentRow {
   studentId: string;
@@ -16,19 +17,34 @@ function emptyRow(): StudentRow {
   return { studentId: "", paid: "" };
 }
 
-export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
+interface Props {
+  onSaved?: () => void;
+  initialLesson?: Lesson;
+}
+
+export default function LogLessonForm({ onSaved, initialLesson }: Props) {
   const { t } = useTranslation();
+  const isEdit = !!initialLesson;
   const { data: lessonTypes, isLoading: typesLoading } = useLessonTypes();
-  // Active students for manual selection, plus the full list so roster-bound
-  // students who later went inactive still resolve to a name + warning.
   const { data: activeStudents, isLoading: studentsLoading } = useStudents(true);
   const { data: allStudents } = useStudents(false);
   const createLesson = useCreateLesson();
+  const updateLesson = useUpdateLesson();
+  const deleteLesson = useDeleteLesson();
 
-  const [date, setDate] = useState(todayIsoDate());
-  const [lessonTypeId, setLessonTypeId] = useState("");
-  const [notes, setNotes] = useState("");
-  const [rows, setRows] = useState<StudentRow[]>([emptyRow()]);
+  const [date, setDate] = useState(initialLesson?.date ?? todayIsoDate());
+  const [lessonTypeId, setLessonTypeId] = useState(
+    initialLesson ? String(initialLesson.lesson_type_id) : ""
+  );
+  const [notes, setNotes] = useState(initialLesson?.notes ?? "");
+  const [rows, setRows] = useState<StudentRow[]>(
+    initialLesson?.lesson_students.length
+      ? initialLesson.lesson_students.map((ls) => ({
+          studentId: String(ls.student_id),
+          paid: ls.amount_paid,
+        }))
+      : [emptyRow()]
+  );
   const [error, setError] = useState<string | null>(null);
 
   const selectedLessonType = lessonTypes?.find((l) => String(l.id) === lessonTypeId);
@@ -41,17 +57,13 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
   function handleLessonTypeChange(value: string) {
     setLessonTypeId(value);
     const lt = lessonTypes?.find((l) => String(l.id) === value);
-    // The price is whatever was actually paid by default — the common case is
-    // paying in full. The instructor edits "Paid" per student when it differs.
     const defaultPaid = lt?.default_price_per_student ?? "";
 
     if (lt && lt.students.length > 0) {
-      // This type has a fixed roster (e.g. "Cohen kids") — populate exactly those students.
       setRows(lt.students.map((s) => ({ studentId: String(s.id), paid: defaultPaid })));
       return;
     }
 
-    // Generic type — just set up the right number of empty slots.
     const count = lt?.default_student_count ?? 1;
     setRows(Array.from({ length: count }, () => ({ studentId: "", paid: defaultPaid })));
   }
@@ -85,13 +97,34 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
     }
 
     try {
-      await createLesson.mutateAsync({
-        date,
-        lesson_type_id: Number(lessonTypeId),
-        notes: notes || undefined,
-        students: studentsPayload,
-      });
-      resetForm();
+      if (isEdit) {
+        await updateLesson.mutateAsync({
+          id: initialLesson.id,
+          date,
+          lesson_type_id: Number(lessonTypeId),
+          notes: notes || undefined,
+          students: studentsPayload,
+        });
+      } else {
+        await createLesson.mutateAsync({
+          date,
+          lesson_type_id: Number(lessonTypeId),
+          notes: notes || undefined,
+          students: studentsPayload,
+        });
+        resetForm();
+      }
+      onSaved?.();
+    } catch {
+      setError(t("common.error"));
+    }
+  }
+
+  async function handleDelete() {
+    if (!initialLesson) return;
+    if (!window.confirm(t("history.deleteLessonConfirm"))) return;
+    try {
+      await deleteLesson.mutateAsync(initialLesson.id);
       onSaved?.();
     } catch {
       setError(t("common.error"));
@@ -100,13 +133,14 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
 
   const noLessonTypes = !typesLoading && (lessonTypes?.length ?? 0) === 0;
   const noStudents = !studentsLoading && (activeStudents?.length ?? 0) === 0;
+  const isPending = createLesson.isPending || updateLesson.isPending;
 
   return (
     <>
-      {noLessonTypes && (
+      {!isEdit && noLessonTypes && (
         <p className="mb-3 text-sm text-amber-600 dark:text-amber-400">{t("dashboard.noLessonTypes")}</p>
       )}
-      {noStudents && (
+      {!isEdit && noStudents && (
         <p className="mb-3 text-sm text-amber-600 dark:text-amber-400">{t("dashboard.noStudents")}</p>
       )}
 
@@ -132,7 +166,7 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
               required
               value={lessonTypeId}
               onChange={(e) => handleLessonTypeChange(e.target.value)}
-              disabled={noLessonTypes}
+              disabled={!isEdit && noLessonTypes}
               className="disabled:opacity-50"
             >
               <option value="">{t("dashboard.selectLessonType")}</option>
@@ -147,7 +181,8 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
 
         {price && (
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {t("dashboard.priceLabel")}: <span className="font-medium text-gray-700 dark:text-gray-300">{formatCurrency(price)}</span>{" "}
+            {t("dashboard.priceLabel")}:{" "}
+            <span className="font-medium text-gray-700 dark:text-gray-300">{formatCurrency(price)}</span>{" "}
             {t("dashboard.perStudent")}
           </p>
         )}
@@ -160,8 +195,6 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
             {rows.map((row, i) => {
               const selectedStudent = allStudents?.find((s) => String(s.id) === row.studentId);
               const isInactive = !!selectedStudent && !selectedStudent.active;
-              // Keep the currently selected student visible in the dropdown even if
-              // they've since gone inactive and dropped out of the active list.
               const options =
                 isInactive && selectedStudent
                   ? [selectedStudent, ...(activeStudents ?? [])]
@@ -174,7 +207,7 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
                       required
                       value={row.studentId}
                       onChange={(e) => updateRow(i, { studentId: e.target.value })}
-                      disabled={noStudents}
+                      disabled={!isEdit && noStudents}
                       wrapperClassName="flex-1"
                       className="disabled:opacity-50"
                     >
@@ -219,7 +252,7 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
           <button
             type="button"
             onClick={addRow}
-            disabled={noStudents}
+            disabled={!isEdit && noStudents}
             className="mt-2 flex items-center gap-1 text-sm font-medium text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
           >
             <PlusIcon className="h-4 w-4" />
@@ -241,14 +274,30 @@ export default function LogLessonForm({ onSaved }: { onSaved?: () => void }) {
 
         {error && <p className="text-sm text-coral-500 dark:text-coral-400">{error}</p>}
 
-        <button
-          type="submit"
-          data-testid="log-lesson-submit"
-          disabled={createLesson.isPending || noLessonTypes || noStudents}
-          className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-base font-medium text-white hover:bg-brand-600 disabled:opacity-60"
-        >
-          {createLesson.isPending ? t("common.saving") : t("dashboard.saveLesson")}
-        </button>
+        <div className={isEdit ? "flex gap-2" : ""}>
+          {isEdit && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleteLesson.isPending}
+              className="rounded-lg border border-coral-300 dark:border-coral-700 px-4 py-2.5 text-sm font-medium text-coral-600 dark:text-coral-400 hover:bg-coral-50 dark:hover:bg-coral-900/20 disabled:opacity-60"
+            >
+              {t("common.delete")}
+            </button>
+          )}
+          <button
+            type="submit"
+            data-testid="log-lesson-submit"
+            disabled={isPending || (!isEdit && (noLessonTypes || noStudents))}
+            className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-base font-medium text-white hover:bg-brand-600 disabled:opacity-60"
+          >
+            {isPending
+              ? t("common.saving")
+              : isEdit
+              ? t("common.save")
+              : t("dashboard.saveLesson")}
+          </button>
+        </div>
       </form>
     </>
   );

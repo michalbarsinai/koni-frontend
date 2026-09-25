@@ -158,7 +158,12 @@
     "selectStudentHint": "בחר תלמיד כדי לראות את היתרה המתגלגלת שלו.",
     "noLessonEntries": "אין שיעורים בתקופה זו.",
     "noPaymentEntries": "אין תשלומים בתקופה זו.",
-    "clearFilters": "נקה סינון"
+    "clearFilters": "נקה סינון",
+    "editLesson": "עריכת שיעור",
+    "deleteLesson": "מחיקת שיעור",
+    "deleteLessonConfirm": "למחוק את השיעור הזה?",
+    "lessonDeleted": "השיעור נמחק",
+    "lessonUpdated": "השיעור עודכן"
   },
   "earnings": {
     "noData": "עדיין לא נרשמו הכנסות.",
